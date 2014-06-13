@@ -14,8 +14,6 @@ requires: pip install watchdog
     # api document: https://pythonhosted.org/watchdog/index.html
 
 TODO: enhance 'ignore list' feature
-TODO: optimize copying a non-empty folder into the local folder
-TODO: optimize deleting, just sync deletions
 """
 
 import os, datetime, time
@@ -45,10 +43,14 @@ class SyncHandler(watchdog.events.FileSystemEventHandler):
         if self.should_ignore(filename):
             return
 
+        if event.is_directory:
+            filename += '/'
+
         remote_file = filename.replace(self.local_path, '')
         remote_parent = os.path.dirname(remote_file)
 
-        cmd = " rsync -cazq --delete %s %s:%s%s/ " % (filename,
+        # -lptgoD is almostly equal to -a except -r
+        cmd = " rsync -clptgoDzq %s %s:%s%s/ " % (filename,
                 self.remote_host, self.remote_path, remote_parent)
         display("Syncing %s " % filename)
         os.system(cmd)
@@ -58,16 +60,15 @@ class SyncHandler(watchdog.events.FileSystemEventHandler):
         if self.should_ignore(filename):
             return
 
-        local_parent = os.path.dirname(filename)
+        local_parent = os.path.dirname(filename) + '/'
         if not os.path.isdir(local_parent):
-            # the parent dir does not exists too
+            # the parent dir does not exists, skip
             return
 
         remote_file = filename.replace(self.local_path, '')
-        remote_parent = os.path.dirname(remote_file)
 
-        cmd = " rsync -cazq --delete %s/ %s:%s%s/ " % (local_parent,
-                self.remote_host, self.remote_path, remote_parent)
+        cmd = " ssh %s 'rm -rf %s%s'" % (self.remote_host,
+                self.remote_path, remote_file)
         display("Syncing %s " % filename)
         os.system(cmd)
 
@@ -90,16 +91,11 @@ class SyncHandler(watchdog.events.FileSystemEventHandler):
     def on_moved(self, event):
         if event.is_directory:
             self.on_deleted(watchdog.events.DirDeletedEvent(event.src_path))
-        else:
-            self.on_deleted(watchdog.events.FileDeletedEvent(event.src_path))
-
-        if os.path.dirname(event.src_path) == os.path.dirname(event.dest_path):
-            return
-
-        if event.is_directory:
             self.on_created(watchdog.events.DirCreatedEvent(event.dest_path))
         else:
+            self.on_deleted(watchdog.events.FileDeletedEvent(event.src_path))
             self.on_deleted(watchdog.events.FileCreatedEvent(event.dest_path))
+
 
 
 def display(str):
@@ -110,6 +106,8 @@ def display(str):
 def parse_opt():
     parser = argparse.ArgumentParser(prog='xsync',
             formatter_class=argparse.ArgumentDefaultsHelpFormatter)
+    parser.add_argument('--setup', action='store_true',
+            help='cp xsync to /usr/local/bin')
     parser.add_argument('--full', action='store_true',
             help='do full sync instead of starting a daemon')
     parser.add_argument('--conf', action='store',
@@ -178,6 +176,10 @@ def parse_conf(filepath):
         if not conf.has_key('local_path'):
             conf['local_path'] = '%s/' % os.path.dirname(
                     os.path.abspath(filepath))
+        if not conf['local_path'].endswith('/'):
+            conf['local_path'] += '/'
+        if not conf['remote_path'].endswith('/'):
+            conf['remote_path'] += '/'
 
     return conf_list
 
@@ -205,8 +207,21 @@ def full_sync(conf_list):
         print cmd
         os.system(cmd)
 
+def setup():
+    script = os.path.abspath(sys.argv[0])
+    dest = '/usr/local/bin/xsync'
+    display('Link "%s" to %s' % (script, dest))
+    cmd = 'chmod +x %s && sudo ln -s -f "%s" %s' % (script, script, dest)
+    os.system(cmd)
+
+
 def main():
     args = parse_opt()
+
+    if args.setup:
+        setup()
+        return
+
     conf_list = parse_conf(args.conf)
 
     if len(conf_list) == 0:
