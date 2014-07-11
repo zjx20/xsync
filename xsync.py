@@ -94,7 +94,7 @@ class SyncHandler(watchdog.events.FileSystemEventHandler):
             self.on_created(watchdog.events.DirCreatedEvent(event.dest_path))
         else:
             self.on_deleted(watchdog.events.FileDeletedEvent(event.src_path))
-            self.on_deleted(watchdog.events.FileCreatedEvent(event.dest_path))
+            self.on_created(watchdog.events.FileCreatedEvent(event.dest_path))
 
 
 
@@ -113,6 +113,8 @@ def parse_opt():
     parser.add_argument('--conf', action='store',
             default=os.path.join(os.getcwd(), '.xsync'),
             help='config file path')
+    parser.add_argument('--init', action='store_true',
+            help='create .xsync file in current folder')
     args = parser.parse_args()
     return args
 
@@ -188,7 +190,8 @@ def watch(conf_list):
 
     for conf in conf_list:
         observer.schedule(SyncHandler(conf), conf['local_path'], recursive=True)
-        display('Watching for local path "%s".' % conf['local_path'])
+        display('Watching for local path "%s", sync to "%s:%s".' %
+                (conf['local_path'], conf['remote_host'], conf['remote_path']))
 
     observer.start()
     try:
@@ -214,12 +217,30 @@ def setup():
     cmd = 'chmod +x %s && sudo ln -s -f "%s" %s' % (script, script, dest)
     os.system(cmd)
 
+def init():
+    filepath = os.path.join(os.getcwd(), '.xsync')
+    if not os.path.isfile(filepath):
+        with open(filepath, 'w') as conf:
+            conf.write(
+"""{
+  "local_path": "%s/",
+  "remote_host": "USER@YOUHOST",
+  "remote_path": "/home/USER/REMOTE_PATH/",
+  "ignore_list": [".git", ".svn", ".DS_Store"]
+}
+""" % (os.getcwd()))
+
+    os.system('vi %s' % filepath)
 
 def main():
     args = parse_opt()
 
     if args.setup:
         setup()
+        return
+
+    if args.init:
+        init()
         return
 
     conf_list = parse_conf(args.conf)
