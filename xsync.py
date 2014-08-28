@@ -20,14 +20,16 @@ import os, datetime, time
 import sys, argparse, json
 import watchdog.events, watchdog.observers
 
+
 class SyncHandler(watchdog.events.FileSystemEventHandler):
 
-    def __init__(self, conf):
+    def __init__(self, conf, times=False):
         watchdog.events.FileSystemEventHandler.__init__(self)
         self.local_path = conf['local_path']
         self.remote_host = conf['remote_host']
         self.remote_path = conf['remote_path']
         self.ignore_list = []
+        self.times = times
         if conf.has_key('ignore_list'):
             self.ignore_list = conf['ignore_list']
         self.ignore_list += ['.xsync']    # ignore .xsync by default
@@ -50,8 +52,10 @@ class SyncHandler(watchdog.events.FileSystemEventHandler):
         remote_parent = os.path.dirname(remote_file)
 
         # -lptgoD is almostly equal to -a except -r
-        cmd = " rsync -clptgoDzq %s %s:%s%s/ " % (filename,
-                self.remote_host, self.remote_path, remote_parent)
+        rsync_args = '-lpgoDzq' + ('t' if self.times else '')
+        cmd = " rsync %s %s %s:%s%s/ " % \
+            (rsync_args, filename, self.remote_host,
+             self.remote_path, remote_parent)
         display("Syncing %s " % filename)
         os.system(cmd)
 
@@ -67,8 +71,8 @@ class SyncHandler(watchdog.events.FileSystemEventHandler):
 
         remote_file = filename.replace(self.local_path, '')
 
-        cmd = " ssh %s 'rm -rf %s%s'" % (self.remote_host,
-                self.remote_path, remote_file)
+        cmd = " ssh %s 'rm -rf %s%s'" % \
+            (self.remote_host, self.remote_path, remote_file)
         display("Syncing %s " % filename)
         os.system(cmd)
 
@@ -83,8 +87,11 @@ class SyncHandler(watchdog.events.FileSystemEventHandler):
 
         remote_file = filename.replace(self.local_path, '')
 
-        cmd = " rsync -cazq --delete %s %s:%s%s " % (filename,
-                self.remote_host, self.remote_path, remote_file)
+        # -lptgoDr is equal to -a
+        rsync_args = '-lpgoDrzq' + ('t' if self.times else '')
+        cmd = " rsync %s --delete %s %s:%s%s " % \
+            (rsync_args, filename, self.remote_host,
+             self.remote_path, remote_file)
         display("Syncing %s " % filename)
         os.system(cmd)
 
@@ -95,7 +102,6 @@ class SyncHandler(watchdog.events.FileSystemEventHandler):
         else:
             self.on_deleted(watchdog.events.FileDeletedEvent(event.src_path))
             self.on_created(watchdog.events.FileCreatedEvent(event.dest_path))
-
 
 
 def display(str):
@@ -115,6 +121,8 @@ def parse_opt():
             help='config file path')
     parser.add_argument('--init', action='store_true',
             help='create .xsync file in current folder')
+    parser.add_argument('--times', action='store_true',
+            help='preserve modification times')
     args = parser.parse_args()
     return args
 
@@ -158,7 +166,7 @@ Config sample:
 def parse_conf(filepath):
     if not os.path.isfile(filepath):
         print >> sys.stderr, '[WARNING] Config "' + filepath + '" not ' + \
-                'exists! skipped.'
+            'exists! skipped.'
         return []
 
     conf = None
@@ -167,7 +175,7 @@ def parse_conf(filepath):
             conf = json.loads(f.read())
         except ValueError:
             print >> sys.stderr, '[WARNING] Couldn\'t parse config ' + \
-                    'from "%s"! skipped.' % filepath
+                'from "%s"! skipped.' % filepath
             return []
 
     conf_list = conf
@@ -176,8 +184,8 @@ def parse_conf(filepath):
 
     for conf in conf_list:
         if not conf.has_key('local_path'):
-            conf['local_path'] = '%s/' % os.path.dirname(
-                    os.path.abspath(filepath))
+            conf['local_path'] = '%s/' % \
+                os.path.dirname(os.path.abspath(filepath))
         if not conf['local_path'].endswith('/'):
             conf['local_path'] += '/'
         if not conf['remote_path'].endswith('/'):
@@ -185,11 +193,13 @@ def parse_conf(filepath):
 
     return conf_list
 
-def watch(conf_list):
+
+def watch(conf_list, options):
     observer = watchdog.observers.Observer()
 
     for conf in conf_list:
-        observer.schedule(SyncHandler(conf), conf['local_path'], recursive=True)
+        observer.schedule(SyncHandler(conf, times=options.times),
+                          conf['local_path'], recursive=True)
         display('Watching for local path "%s", sync to "%s:%s".' %
                 (conf['local_path'], conf['remote_host'], conf['remote_path']))
 
@@ -201,14 +211,16 @@ def watch(conf_list):
         observer.stop()
     observer.join()
 
+
 def full_sync(conf_list):
     for conf in conf_list:
         display("Full sync from '%s' to %s:%s" % (conf['local_path'],
                 conf['remote_host'], conf['remote_path']))
-        cmd = " rsync -cazqr --delete %s %s:%s " % (conf['local_path'],
-                conf['remote_host'], conf['remote_path'])
+        cmd = " rsync -azq --delete %s %s:%s " % \
+            (conf['local_path'], conf['remote_host'], conf['remote_path'])
         print cmd
         os.system(cmd)
+
 
 def setup():
     script = os.path.abspath(sys.argv[0])
@@ -217,12 +229,13 @@ def setup():
     cmd = 'chmod +x %s && sudo ln -s -f "%s" %s' % (script, script, dest)
     os.system(cmd)
 
+
 def init():
     filepath = os.path.join(os.getcwd(), '.xsync')
     if not os.path.isfile(filepath):
         with open(filepath, 'w') as conf:
-            conf.write(
-"""{
+            conf.write("""\
+{
   "local_path": "%s/",
   "remote_host": "USER@YOUHOST",
   "remote_path": "/home/USER/REMOTE_PATH/",
@@ -231,6 +244,7 @@ def init():
 """ % (os.getcwd()))
 
     os.system('vi %s' % filepath)
+
 
 def main():
     args = parse_opt()
@@ -251,7 +265,7 @@ def main():
     if args.full:
         full_sync(conf_list)
     else:
-        watch(conf_list)
+        watch(conf_list, args)
 
 if __name__ == '__main__':
     main()
