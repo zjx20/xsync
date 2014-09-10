@@ -30,7 +30,7 @@ class SyncHandler(watchdog.events.FileSystemEventHandler):
         self.remote_path = conf['remote_path']
         self.ignore_list = []
         self.times = times
-        if conf.has_key('ignore_list'):
+        if 'ignore_list' in conf:
             self.ignore_list = conf['ignore_list']
         self.ignore_list += ['.xsync']    # ignore .xsync by default
 
@@ -53,9 +53,10 @@ class SyncHandler(watchdog.events.FileSystemEventHandler):
 
         # -lptgoD is almostly equal to -a except -r
         rsync_args = '-lpgoDzq' + ('t' if self.times else '')
-        cmd = " rsync %s %s %s:%s%s/ " % \
+        cmd = " rsync %s \"%s\" \"%s:%s%s/\" " % \
             (rsync_args, filename, self.remote_host,
-             self.remote_path, remote_parent)
+             self.remote_path.replace(' ', '\\\\ '),
+             remote_parent.replace(' ', '\\\\ '))
         display("Syncing %s " % filename)
         os.system(cmd)
 
@@ -71,7 +72,7 @@ class SyncHandler(watchdog.events.FileSystemEventHandler):
 
         remote_file = filename.replace(self.local_path, '')
 
-        cmd = " ssh %s 'rm -rf %s%s'" % \
+        cmd = " ssh %s 'rm -rf \"%s%s\"'" % \
             (self.remote_host, self.remote_path, remote_file)
         display("Syncing %s " % filename)
         os.system(cmd)
@@ -89,9 +90,10 @@ class SyncHandler(watchdog.events.FileSystemEventHandler):
 
         # -lptgoDr is equal to -a
         rsync_args = '-lpgoDrzq' + ('t' if self.times else '')
-        cmd = " rsync %s --delete %s %s:%s%s " % \
+        cmd = " rsync %s --delete \"%s\" \"%s:%s%s\" " % \
             (rsync_args, filename, self.remote_host,
-             self.remote_path, remote_file)
+             self.remote_path.replace(' ', '\\\\ '),
+             remote_file.replace(' ', '\\\\ '))
         display("Syncing %s " % filename)
         os.system(cmd)
 
@@ -183,7 +185,7 @@ def parse_conf(filepath):
         conf_list = [conf]
 
     for conf in conf_list:
-        if not conf.has_key('local_path'):
+        if 'local_path' not in conf:
             conf['local_path'] = '%s/' % \
                 os.path.dirname(os.path.abspath(filepath))
         if not conf['local_path'].endswith('/'):
