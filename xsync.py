@@ -14,6 +14,7 @@ requires: pip install watchdog
     # api document: https://pythonhosted.org/watchdog/index.html
 
 TODO: enhance 'ignore list' feature
+TODO: Chinese support
 """
 
 import os, datetime, time
