@@ -50,14 +50,21 @@ class SyncHandler(watchdog.events.FileSystemEventHandler):
             filename += '/'
 
         remote_file = filename.replace(self.local_path, '')
-        remote_parent = os.path.dirname(remote_file)
+        remote_parent = "%s%s" % (self.remote_path, 
+                                  os.path.dirname(remote_file))
+
+        # escape spaces for sending the cmd via ssh
+        remote_parent = remote_parent.replace(' ', '\\\\ ')
+
+        # to make sure the remote parent dir exists
+        cmd = " ssh %s '[ ! -d \"%s\" ] && mkdir -p \"%s\"'" % \
+            (self.remote_host, remote_parent, remote_parent)
+        os.system(cmd)
 
         # -lptgoD is almostly equal to -a except -r
         rsync_args = '-lpgoDzq' + ('t' if self.times else '')
-        cmd = " rsync %s \"%s\" \"%s:%s%s/\" " % \
-            (rsync_args, filename, self.remote_host,
-             self.remote_path.replace(' ', '\\\\ '),
-             remote_parent.replace(' ', '\\\\ '))
+        cmd = " rsync %s \"%s\" \"%s:%s/\" " % \
+            (rsync_args, filename, self.remote_host, remote_parent)
         display("Syncing %s " % filename)
         os.system(cmd)
 
