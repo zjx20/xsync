@@ -1,4 +1,4 @@
-#!/usr/bin/env python
+#!/usr/bin/env python2
 """
 xsync.py by zjx20
 http://github.com/zjx20/xsync/
@@ -7,7 +7,7 @@ This script will watch a local directory and on change will
 sync to a remote directory. The script can be easily modified
 to do whatever you want on a change event.
 
-requires: pip install watchdog
+requires: pip install 'watchdog==0.8.3'
 
   about watchdog:
     # project site: http://github.com/gorakhargosh/watchdog
@@ -249,7 +249,7 @@ def init():
   "local_path": "%s/",
   "remote_host": "USER@YOUHOST",
   "remote_path": "/home/USER/REMOTE_PATH/",
-  "ignore_list": [".git", ".svn", ".DS_Store"]
+  "ignore_list": [".git", ".svn", ".DS_Store", ".idea", ".vscode"]
 }
 """ % (os.getcwd()))
 
@@ -275,7 +275,26 @@ def main():
     if args.full:
         full_sync(conf_list)
     else:
+        patch_dirsnapshot()
         watch(conf_list, args)
+
+
+def patch_dirsnapshot():
+    import watchdog.utils.dirsnapshot
+
+    class SkipSymlinksDirectorySnapshot(watchdog.utils.dirsnapshot.DirectorySnapshot):
+        def __init__(self, *args, **kwargs):
+            kwargs['listdir'] = lambda p: () if os.path.islink(p) else os.listdir(p)
+            super(SkipSymlinksDirectorySnapshot, self).__init__(*args, **kwargs)
+
+    if watchdog.observers.Observer.__name__ == 'FSEventsObserver':
+        import watchdog.observers.fsevents
+        if 'DirectorySnapshot' in dir(watchdog.observers.fsevents):
+            watchdog.observers.fsevents.DirectorySnapshot = SkipSymlinksDirectorySnapshot
+            display('[INFO] Monkey-patched DirectorySnapshot in watchdog library to skip symlink dirs, to avoid endless cycles.')
+        else:
+            display('[WARN] unsupported watchdog version, the skipping symlink dir feature is not enabled.')
+
 
 if __name__ == '__main__':
     main()
