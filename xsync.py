@@ -50,7 +50,7 @@ class SyncHandler(watchdog.events.FileSystemEventHandler):
             filename += '/'
 
         remote_file = filename.replace(self.local_path, '')
-        remote_parent = "%s%s" % (self.remote_path, 
+        remote_parent = "%s%s" % (self.remote_path,
                                   os.path.dirname(remote_file))
 
         # escape spaces for sending the cmd via ssh
@@ -116,7 +116,7 @@ class SyncHandler(watchdog.events.FileSystemEventHandler):
 
 def display(str):
     now = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-    print "[{0}] {1}".format(now, str)
+    print("[{0}] {1}".format(now, str))
 
 
 def parse_opt():
@@ -226,9 +226,10 @@ def full_sync(conf_list):
     for conf in conf_list:
         display("Full sync from '%s' to %s:%s" % (conf['local_path'],
                 conf['remote_host'], conf['remote_path']))
-        cmd = " rsync -azq --delete %s %s:%s " % \
-            (conf['local_path'], conf['remote_host'], conf['remote_path'])
-        print cmd
+        excludes = ' '.join(['--exclude "%s"' % x for x in conf['ignore_list']])
+        cmd = " rsync -azq --delete %s %s %s:%s " % \
+            (excludes, conf['local_path'], conf['remote_host'], conf['remote_path'])
+        print(cmd)
         os.system(cmd)
 
 
