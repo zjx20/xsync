@@ -1,4 +1,4 @@
-#!/usr/bin/env python2
+#!/usr/bin/env python
 """
 xsync.py by zjx20
 http://github.com/zjx20/xsync/
